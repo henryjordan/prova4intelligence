@@ -1,0 +1,330 @@
+---
+title: "Prova 4Intelligence Junho/2021"
+author: "Henrique Jordão Figueiredo Alves"
+date: "24/06/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1. Introdução
+
+Este é um projeto de análise de dados e machine learning referente ao processo seletivo para o cargo de Cientista de Dados da 4Intelligence.
+
+Se necessário, favor modificar o diretório dos arquivos na função setwd().
+
+## 2. Etapa 1: Preparação
+
+Nesta Etapa realizamos a instalação e o carregamento dos pacotes necessários para o projeto ser executado.
+
+```{r etapa 1-1, include=FALSE}
+# Denominando o diretório dos arquivos
+setwd("~/DataScience/4intelligence")
+getwd()
+```
+
+
+```{r etapa 1-2, message=FALSE}
+# Carregando os pacotes
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(xlsx)
+library(reshape2)
+library(scales)
+library(ggcorrplot)
+library(caret)
+library(randomForest)
+library(e1071)
+library(xgboost)
+
+dados_base <- read.xlsx("Bases_Final_ADS_Jun2021.xlsx",sheetName="dados")
+```
+
+## 3. Etapa 2: Pré-Processamento
+
+Agora que já temos o ambiente pronto e os dados carregados, iremos dar início ao processo de análise e manipulação dos dados.
+
+Antes de qualquer coisa, vamos verificar o resumo do dataset para termos uma noção melhor das variáveis nas quais estamos trabalhando.
+
+```{r etapa 2-1}
+summary(dados_base)
+```
+
+Como há valores 'NA' nas colunas `massa_r` e `renda_r`, teremos problemas na análise, caso não façamos algo a respeito. Como solução, optei por preencher os dados em falta com o valor da média dos valores já existentes em cada variável.
+  
+```{r etapa 2-2}
+dados_base <- dados_base %>%
+  replace_na(list(renda_r=mean(dados_base$renda_r, na.rm = TRUE), 
+  massa_r = mean(mean(dados_base$massa_r, na.rm = TRUE))))
+```
+
+Feito isso, já temos resolvido o problema com 'Missing Values'.
+    
+  Agora, precisamos separar os dados presentes dos dados futuros, para podermos realizar a análise descritiva do negócio, e posteriormente, construirmos o modelo de aprendizado de máquina.
+    
+Como temos 206 linhas de dados preenchidas, iremos extraí-las para o nosso novo dataset.
+  
+```{r etapa 2-3}
+dados <- dados_base[1:206,]
+```
+  
+## 4. Etapa 3: Análise Descritiva
+
+Agora partiremos para a nossa análise descritiva e exploratória do projeto. Nessa fase, iremos adquirir um conhecimento melhor dos nossos dados através da plotagem de gráficos.
+    
+Para responde a Questão 1 da prova, precisamos separar nossos dados em subsets e depois agrupá-los num dataframe mais organizado para realizarmos a análise dos dados de consumo nas regiões do Brasil, assim como a correlação entre as respectivas variáveis.
+    
+Também iremos analisar, em especial, a variável `ind_se`, correspondente ao consumo de energia industrial da região Sudeste, já que esta será nossa variável preditora do nosso modelo de machine learning.
+    
+Logo:
+  
+```{r etapa 3-1}
+# Separando os dados das datas e criando um array com os nomes das regiões
+regiao <- c('Centro-Oeste','Norte','Nordeste','Sul','Sudeste')
+datas <- dados[,1]
+
+# Criando subsets para análise de consumos de energia comercial, industrial e residencial
+
+comercio <- subset(dados[,2:6])
+colnames(comercio) <- regiao
+comercio$categoria <- "Comércio"
+comercio$data <- datas
+
+industria <- subset(dados[,7:11])
+colnames(industria) <- regiao
+industria$categoria <- "Indústria"
+industria$data <- datas
+
+residencial <- subset(dados[,12:16])
+colnames(residencial) <- regiao
+residencial$categoria <- "Residencial"
+residencial$data <- datas
+
+dados_consumo <- do.call("rbind", list(comercio, industria, residencial))
+
+head(dados_consumo)
+```
+  
+  Agora sim podemos dar início à nossa análise descritiva.
+  Primeiro vamos conferir os histogramas e as curvas de densidade das variáveis de consumo nos setores de comércio, indústria e residencial nas cinco regiões do país.
+  
+```{r etapa 3-2, echo=FALSE, message=FALSE}
+# Histograma do Consumo de Energia Comercial por Região
+reshape2::melt(dados_consumo[,1:6]) %>% filter(categoria == "Comércio") %>%
+  ggplot(aes(x=value)) + facet_wrap( ~ variable, scales="free") +
+  xlab('Consumo de Energia (Gwh)') + ylab('Número de Ocorrências') + ggtitle('Histograma de Consumo de Energia Comercial por Região') +
+  theme(plot.title = element_text(hjust = 0.5)) + geom_histogram(aes(y=..density..),fill='white',colour='black') +
+  geom_density(alpha = .2, fill="#FF6655")
+
+# Histograma do Consumo de Energia Industrial por Região
+reshape2::melt(dados_consumo[,1:6]) %>% filter(categoria == "Indústria") %>%
+  ggplot(aes(x=value)) + facet_wrap( ~ variable, scales="free") +
+  xlab('Consumo de Energia (Gwh)') + ylab('Número de Ocorrências') + ggtitle('Histograma de Consumo de Energia Industrial por Região') +
+  theme(plot.title = element_text(hjust = 0.5)) + geom_histogram(aes(y=..density..),fill='white',colour='black') +
+  geom_density(alpha = .2, fill="#FF6655")
+
+# Histograma do Consumo de Energia Residencial por Região
+reshape2::melt(dados_consumo[,1:6]) %>% filter(categoria == "Residencial") %>%
+  ggplot(aes(x=value)) + facet_wrap( ~ variable, scales="free") +
+  xlab('Consumo de Energia (Gwh)') + ylab('Número de Ocorrências') + ggtitle('Histograma de Consumo de Energia Residencial por Região') +
+  theme(plot.title = element_text(hjust = 0.5)) + geom_histogram(aes(y=..density..),fill='white',colour='black') +
+  geom_density(alpha = .2, fill="#FF6655")
+```
+  
+  Nos histogramas acima, podemos ver que algumas variáveis não possuem distribuição normal, incluindo a variável de consumo de energia industrial da região Sudeste (`ind_se`). Nela, podemos ver que há uma assimetria mais à direita do centro de distribuição dos valores.
+  
+  Em seguida, iremos analisar as variáveis de consumo por meio de boxplots. Confira abaixo:
+  
+```{r etapa 3-3, echo=FALSE, message=FALSE}
+# Boxplot do Consumo de Energia Comercial por Região
+reshape2::melt(dados_consumo[,1:6]) %>% filter(categoria == "Comércio") %>%
+  ggplot(aes(x=variable, y=value, color=variable)) + facet_wrap( ~ variable, scales="free") +
+  xlab('Região') + ylab('Consumo de Energia (Gwh)') + ggtitle('Consumo de Energia Comercial por Região (01/2004-02/2021)') +
+  theme(plot.title = element_text(hjust = 0.5)) + geom_boxplot() + scale_color_discrete(name="Região")
+
+# Boxplot do Consumo de Energia Industrial por Região
+reshape2::melt(dados_consumo[,1:6]) %>% filter(categoria == "Indústria") %>%
+  ggplot(aes(x=variable, y=value, color=variable)) + facet_wrap( ~ variable, scales="free") +
+  xlab('Região') + ylab('Consumo de Energia (Gwh)') + ggtitle('Consumo de Energia Industrial por Região (01/2004-02/2021)') +
+  theme(plot.title = element_text(hjust = 0.5)) + geom_boxplot() + scale_color_discrete(name="Região")
+
+# Boxplot do Consumo de Energia Residencial por Região
+reshape2::melt(dados_consumo[,1:6]) %>% filter(categoria == "Residencial") %>%
+  ggplot(aes(x=variable, y=value, color=variable)) + facet_wrap( ~ variable, scales="free") +
+  xlab('Região') + ylab('Consumo de Energia (Gwh)') + ggtitle('Consumo de Energia Residencial por Região (01/2004-02/2021)') +
+  theme(plot.title = element_text(hjust = 0.5)) + geom_boxplot() + scale_color_discrete(name="Região")
+```
+  
+  Com os boxplots acima, podemos ter uma visão de um ponto de vista diferente de como está a distribuição de valores das variáveis. Note como há uma discrepância entre o valor máximo e o valor mínimo da variável `ind_se`.
+  
+  Agora, vamos analisar a evolução do consumos de energia ao longo do tempo com gráficos de série temporal
+  
+```{r etapa 3-4, echo=FALSE, message=FALSE}
+# Série Temporal de Consumo de Energia Comercial por Região
+reshape2::melt(comercio[,-6],id="data") %>% ggplot(aes(x=data, y=value)) + geom_line(aes(colour=variable, group=variable)) +
+  geom_point(aes(colour=variable),size=2) + scale_x_date(date_labels = "%b/%Y") +
+  xlab('Mês/Ano') + ylab('Consumo de Energia (Gwh)') + ggtitle('Energia Comercial Consumida por Região (01/2004-02/2021)') +
+  theme(plot.title = element_text(hjust = 0.5)) + scale_color_discrete(name="Região")
+
+# Série Temporal de Consumo de Energia Industrial por Região
+reshape2::melt(industria[,-6],id="data") %>% ggplot(aes(x=data, y=value)) + geom_line(aes(colour=variable, group=variable)) +
+  geom_point(aes(colour=variable),size=2) + scale_x_date(date_labels = "%b/%Y") +
+  xlab('Mês/Ano') + ylab('Consumo de Energia (Gwh)') + ggtitle('Energia Industrial Consumida por Região (01/2004-02/2021)') +
+  theme(plot.title = element_text(hjust = 0.5)) + scale_color_discrete(name="Região")
+
+# Série Temporal de Consumo de Energia Residencial por Região
+reshape2::melt(residencial[,-6],id="data") %>% ggplot(aes(x=data, y=value)) + geom_line(aes(colour=variable, group=variable)) +
+  geom_point(aes(colour=variable),size=2) + scale_x_date(date_labels = "%b/%Y") +
+  xlab('Mês/Ano') + ylab('Consumo de Energia (Gwh)') + ggtitle('Energia Residencial Consumida por Região (01/2004-02/2021)') +
+  theme(plot.title = element_text(hjust = 0.5)) + scale_color_discrete(name="Região")
+```
+  
+  Nos gráficos, podemos ver a evolução do consumo de energia nas regiões entre os anos de 2004 e 2021.
+  
+  No gráfico do setor industrial, podemos perceber que houve uma forte queda no consumo de energia em todas as regiões do país durante o biênio 2008-2009, em especial no Sudeste, onde se encontram a maior parte das indústrias em território nacional.
+    
+  Esse acontecimento, pode ser explicado pela crise de 2008, que causou uma desindustrilização periódica no país e que afetou fortemente o setor de energia elétrica¹.
+  
+  Outro acontecimento interessante de notar, é a queda do consumo de energia em todas as regiões no primeiro trimestre de 2020, devido à pandemia de COVID-19. Com o aumento de restrições de mobilidade, a demanda por energia elétrica diminuiu nas indústrias e no comércio, e uma leve alta no consumo residencial².
+    
+  Por fim, iremos analisar a relação entre as variáveis de consumo de energia.
+  
+```{r etapa 3-5, echo=FALSE, message=FALSE}
+corr <- cor(dados[,2:16])
+ggcorrplot(corr, hc.order = FALSE, type = "lower", lab = TRUE, lab_size = 2.5) +
+  ggtitle('Matriz de Correlação entre as Variáveis de Consumo de Energia') +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+  
+  Na matriz de correlação acima, podemos perceber que quase todas as variáveis de consumo energético do país, tem forte relação entre elas, com exceção das variáveis de consumo industrial das regiões Nordeste e Sudeste, que por sua vez tem uma relação positiva forte entre elas (cor = 0.75)³.
+  
+## 5. Etapa 4: Criando Modelos de Machine Learning
+
+  Nesta etapa vamos finalmente criar nossos modelos de aprendizado de máquina.
+
+  Já sabemos que, assim como a nossa variável preditora `ind_se`, todas as nossas variáveis são numéricas, com exceção da variável `data_tidy` que é uma variável do tipo 'Date'.
+  
+  Logo, precisamos construir um modelo de regressão, com a melhor acurácia possível, que possa prever os dados de consumo de energia industrial na região Sudeste nos próximos 2 anos.
+  
+  Antes, vamos remover a variável `data_tidy` e criar os modelos de treino e teste baseado nos nossos dados presentes.
+  
+```{r etapa 4-1}
+dados$data_tidy <- NULL
+
+sample1 <- sample(1:nrow(dados), 165)
+sample2 <- sample(166:nrow(dados), 41)
+dados_treino <- dados[sample1,]
+dados_teste <- dados[sample2,]
+```
+  
+  Como só temos apenas 206 observações no nosso dataset, optei por fazer uma divisão 80/20 para os dados de treino e de teste para garantir que o modelo tenha uma acurácia maior.
+  
+  Vamos fazer em seguida, o nosso modelo inicial para determinarmos as variáveis mais importsntes para a criação do nosso modelo definitivo.
+  
+```{r etapa 4-2}
+modelo_v1 <- train(ind_se ~ ., data = dados_treino, method = 'lm')
+varImp(modelo_v1)
+plot(varImp(modelo_v1))
+```
+  
+  Pela lista de variáveis importantes acima e o gráfico, podemos ver que as variáveis mais importantes para a variável preditora são: `ind_s`, `pim_se`, `com_se` e `ind_ne`.
+  
+  O fato do consumo industrial do Nordeste estar entre as variáveis importantes confere com o que vimos anteriormente na matriz de correlação de variáveis. As variáveis `pim_se`, que representa a produção industrial no Sudeste, e `com_se`, que representa o consumo no comercio da região, também não surpreende por estarem diretamente ligadas ao consumo industrial.
+  
+  Assim vamos construir o nosso modelo de regressão linear baseado nessas informações.
+  
+  Como a variável `ind_se` não possui uma distribuição normal, iremos realizar uma transformação logarítmica nela e nas demais variáveis importantes.
+  
+```{r etapa 4-3}
+# Modelo Regressão Linear
+modelo_v1 <- train(log(ind_se) ~ log(com_se) + log(ind_s) + log(pim_se) + log(ind_ne),
+                   data = dados_treino, method = 'lm')
+summary(modelo_v1)
+```
+  
+  Pelo resumo, obtivemos um erro residual baixo, o que é um bom sinal para o nosso modelo.
+  
+  Iremos comprovar isso abaixo ao realizar a previsão dos nossos dados e conferindo com os nossos dados de teste.
+  
+```{r etapa 4-4}
+previsao <- predict(modelo_v1, dados_teste)
+previsao <- round(previsao,1)
+mean(previsao==round(log(dados_teste$ind_se),1))
+```
+  
+  Conseguimos obter uma acurácia de 82.9%, o que é um bom resultado se levarmos em conta a escassez de dados usados no modelo.
+
+  Feito isso, iremos agora tentar encontrar uma alternativa ao modelo de regressão linear utilizando outros 4 modelos: randomForest, GradientBoost, regressão linear generalizada (glm) e o support vector machine (svm).
+    
+  Esses modelos foram escolhidos por serem os mais eficazes para previsão de variáveis numéricas e fornecerem uma gama de opções para configurar os modelos a ponto de se obter uma melhor acurácia.
+  
+```{r etapa 4-5}
+# Modelo randomForest
+modelo_v2 <- randomForest(ind_se ~ com_se + ind_s + pim_se + ind_ne, data = dados_treino)
+print(modelo_v2)
+
+previsao2 <- predict(modelo_v2,dados_teste)
+RMSE(previsao2,dados_teste$ind_se)
+```
+
+
+```{r etapa 4-6, warning=FALSE}
+# Modelo GradientBoost
+
+set.seed(123)
+modelo_v3 <- train(ind_se ~ com_se + ind_s + ind_ne + pim_se, data = dados_treino,
+method = "xgbTree", trControl = trainControl("cv", number = 10), 
+objective = "reg:squarederror", verbose=FALSE)
+```
+
+
+```{r etapa 4-7}
+previsao3 <- predict(modelo_v3,dados_teste)
+RMSE(previsao3, dados_teste$ind_se)
+```
+
+
+```{r etapa 4-8}
+# Modelo Regressão Linear Generalizada
+
+modelo_v4 <- train(log(ind_se) ~ log(com_se) + log(ind_s) + log(pim_se) + log(ind_ne),
+                   data = dados_treino, method = 'glm')
+
+previsao4 <- predict(modelo_v4, dados_teste)
+previsao4 <- round(previsao4,1)
+mean(previsao4==round(log(dados_teste$ind_se),1))
+```
+
+
+```{r etapa 4-9}
+# Modelo SVM
+
+modelo_v5 <- svm(log(ind_se) ~ log(com_se) + log(ind_s) + log(pim_se) + log(ind_ne),
+                     data = dados_treino,
+                     type = 'eps-regression',
+                     kernel = 'linear')
+
+pred_test <- predict(modelo_v5, dados_teste)
+mean(round(pred_test,1) == round(log(dados_teste$ind_se),1))
+```
+  
+  Acima, podemos ver que os modelos SVM e glm tiveram resultados similares aos de regressão linear. Já os modelos de randomForest e GradientBoost não obtiveram resultados satisfatórios, talvez por ser necesário uma configuração mais adequada para o dataset ou pela necessidade de mais dados para treinar o modelo.
+  
+## 6. Conclusão
+
+  Durante o projeto, pudemos ter uma noção melhor de como funciona o consumo de energia elétrica no país.
+  
+  Na análise descritiva, vimos que a região Sudeste é dona da maior parte do consumo de energia entre todas as regiões, independente do setor. Com o passar dos anos, o consumo de energia tende a aumentar, especialmente em áreas mais industrializadas e com maior população.
+  
+  Na modelagem, pudemos provar como a produção industrial e o consumo industrial do Nordeste estão diretamente ligados ao consumo industrial do Sudeste. Através de técnicas de normalização e uso de feature selection para escolha de variáveis importantes em relação à variável preditora, pudemos alcançar uma acurácia de 82.9% no nosso modelo de machine learning, mesmo com poucos dados à nossa disposição.
+  
+## 7. Referências Bibliográficas
+  
+  [1] https://agenciabrasil.ebc.com.br/economia/noticia/2018-09/crise-de-2008-resultou-em-desindustrializacao-e-crise-fiscal-no-brasil - Acessado em 24 de junho de 2021
+  
+  [2] https://www.epe.gov.br/pt/imprensa/noticias/impactado-pela-covid-19-consumo-de-energia-deve-cair-0-9-em-2020 - Acessado em 24 de junho de 2021
+  
+  [3] https://g1.globo.com/jornal-nacional/noticia/2020/11/13/nordeste-produz-mais-energia-do-que-consome-e-excedente-e-distribuido-para-outras-regioes.ghtml - Acessado em 24 de junho de 2021
